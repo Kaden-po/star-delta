@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>星角啟動 (Star-Delta) 物理原理與 3D 實務示範</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.146.0/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.146.0/examples/js/controls/OrbitControls.js"></script>
+  <style>
+    :root {
+      --bg-page: #f4f5f7;
+      --surface-bright: #ffffff;
+      --surface-dim: #eceef2;
+      --on-surface: #111827;
+      --on-surface-variant: #4b5563;
+      --primary: #2575fc;
+      --accent-bg: #dcf1ff;
+      --border-subtle: #e5e7eb;
+      --chart-1: #2575fc;
+      --chart-3: #228a49;
+      --chart-8: #997112;
+      --chart-10: #c84288;
+      --outline: #727676;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-page: #0f1115;
+        --surface-bright: #1c1f26;
+        --surface-dim: #14161b;
+        --on-surface: #f3f4f6;
+        --on-surface-variant: #9ca3af;
+        --primary: #9dd2ff;
+        --accent-bg: #192967;
+        --border-subtle: #2d313a;
+        --chart-1: #9dd2ff;
+        --chart-3: #50e389;
+        --chart-8: #f5d77f;
+        --chart-10: #ffa6d7;
+        --outline: #9a9b9c;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px 16px;
+      background: var(--bg-page);
+      color: var(--on-surface);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", "PingFang HK", sans-serif;
+      line-height: 1.5;
+    }
+    .container {
+      max-width: 920px;
+      margin: 0 auto;
+    }
+    .page-header {
+      margin-bottom: 16px;
+    }
+    .page-header h1 {
+      margin: 0 0 6px 0;
+      font-size: 22px;
+      font-weight: 700;
+    }
+    .page-header p {
+      margin: 0;
+      font-size: 14px;
+      color: var(--on-surface-variant);
+    }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    @media (max-width: 640px) {
+      .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    .kpi-card {
+      background: var(--surface-bright);
+      border-radius: 14px;
+      padding: 14px 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .kpi-label {
+      font-size: 12px;
+      color: var(--on-surface-variant);
+      margin-bottom: 4px;
+    }
+    .kpi-val {
+      font-size: 17px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .viewport-3d {
+      position: relative;
+      width: 100%;
+      height: 380px;
+      background: var(--surface-dim);
+      border-radius: 18px;
+      overflow: hidden;
+      border: 1px solid var(--border-subtle);
+    }
+    .hud-pill {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      background: var(--surface-bright);
+      color: var(--on-surface-variant);
+      pointer-events: none;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    }
+    .hud-stage {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      background: var(--surface-bright);
+      color: var(--on-surface);
+      pointer-events: none;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    }
+    .hud-labels {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      right: 12px;
+      display: flex;
+      justify-content: space-between;
+      gap: 6px;
+      flex-wrap: wrap;
+      pointer-events: none;
+    }
+    .comp-badge {
+      padding: 5px 11px;
+      border-radius: 999px;
+      font-size: 12px;
+      background: var(--surface-bright);
+      color: var(--on-surface);
+      font-variant-numeric: tabular-nums;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+    .control-deck {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      margin-top: 14px;
+      padding: 18px 20px;
+      background: var(--surface-bright);
+      border-radius: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .top-controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .segmented-group {
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      background: var(--surface-dim);
+      padding: 4px;
+      border-radius: 12px;
+    }
+    .segmented-btn {
+      border: none;
+      background: transparent;
+      color: var(--on-surface-variant);
+      padding: 7px 12px;
+      border-radius: 9px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .segmented-btn.is-active {
+      background: var(--surface-bright);
+      color: var(--on-surface);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .btn {
+      border: none;
+      padding: 8px 14px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.88; }
+    .btn-accent {
+      background: var(--primary);
+      color: #ffffff;
+    }
+    @media (prefers-color-scheme: dark) {
+      .btn-accent { color: #0f1115; }
+    }
+    .btn-tonal {
+      background: var(--surface-dim);
+      color: var(--on-surface);
+    }
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .slider-label {
+      font-size: 13px;
+      font-weight: 500;
+      min-width: 130px;
+    }
+    .slider-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 200px;
+    }
+    input[type="range"] {
+      flex: 1;
+      accent-color: var(--primary);
+      cursor: pointer;
+    }
+    .slider-value {
+      min-width: 62px;
+      text-align: center;
+      padding: 6px 10px;
+      border-radius: 10px;
+      background: var(--surface-dim);
+      font-size: 13px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .status-desc {
+      font-size: 14px;
+      color: var(--on-surface-variant);
+      line-height: 1.55;
+      padding-top: 6px;
+      border-top: 1px solid var(--border-subtle);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="page-header">
+      <h1>三相感應摩打：星角啟動 (Star-Delta) 物理原理與 3D 實務示範</h1>
+      <p>透過 3D 接觸器動作、摩打接線盒銅片拓撲與粒子電流路徑，示範 Y 啟動 → 50ms 死區 → Δ 運作之完整過程（400V 50Hz 系統）</p>
+    </header>
+
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">每相繞組電壓 (V_ph)</div>
+        <div id="kpi-volt" class="kpi-val">0 V (0%)</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">啟動線電流 (I_L)</div>
+        <div id="kpi-curr" class="kpi-val">0.0 × I_FL</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">電磁轉矩 (T)</div>
+        <div id="kpi-torq" class="kpi-val">0% T_DOL</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">摩打轉速 (N)</div>
+        <div id="kpi-rpm" class="kpi-val">0 RPM</div>
+      </div>
+    </div>
+
+    <div id="viz-zone" class="viewport-3d">
+      <div class="hud-pill">拖曳旋轉 3D 視角 · 滾輪縮放</div>
+      <div id="hud-stage-badge" class="hud-stage">階段 0：待機隔離</div>
+      <div class="hud-labels">
+        <span id="badge-km1" class="comp-badge">KM1 (Main): OPEN</span>
+        <span id="badge-km3" class="comp-badge">KM3 (Star Y): OPEN</span>
+        <span id="badge-km2" class="comp-badge">KM2 (Delta Δ): OPEN</span>
+        <span id="badge-kt1" class="comp-badge">KT1 (Timer): 0.0 s</span>
+      </div>
+    </div>
+
+    <div class="control-deck">
+      <div class="top-controls">
+        <div class="segmented-group" role="group" aria-label="啟動階段切換">
+          <button type="button" class="segmented-btn is-active" data-stage="0">0. 待機 (Standby)</button>
+          <button type="button" class="segmented-btn" data-stage="1">1. 星型啟動 (Y Start)</button>
+          <button type="button" class="segmented-btn" data-stage="2">2. 轉換死區 (Dead Time)</button>
+          <button type="button" class="segmented-btn" data-stage="3">3. 三角運作 (Δ Run)</button>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" id="btn-auto" class="btn btn-accent">自動順序演示</button>
+          <button type="button" id="btn-reset" class="btn btn-tonal">重設視角</button>
+        </div>
+      </div>
+
+      <div class="slider-row">
+        <label class="slider-label" for="in-time">啟動時間軸推進 (t)</label>
+        <div class="slider-container">
+          <input id="in-time" type="range" min="0" max="10" step="0.1" value="0" aria-label="啟動時間軸">
+          <div id="val-time" class="slider-value">0.0 s</div>
+        </div>
+      </div>
+
+      <div id="stage-desc" class="status-desc">
+        待機狀態：MCCB 已合上，PLC 輸出 Q0.0–Q0.2 全數斷開，接觸器 KM1、KM2、KM3 主觸頭打開，摩打繞組 (U1-U2, V1-V2, W1-W2) 無電流通過。
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function getCssVar(name, fallback = '') {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+    }
+    function showErrorFallback(zoneId, err) {
+      const el = document.getElementById(zoneId);
+      if (!el) return;
+      el.innerHTML = `<div style="padding:24px;text-align:center;">3D 視圖載入失敗: ${err && err.message ? err.message : 'render error'}</div>`;
+    }
+    function whenReady(globalName, init, zoneId = 'viz-zone', timeoutMs = 10000) {
+      const start = Date.now();
+      (function check() {
+        if (window[globalName]) Promise.resolve().then(init).catch(err => showErrorFallback(zoneId, err));
+        else if (Date.now() - start < timeoutMs) setTimeout(check, 50);
+        else showErrorFallback(zoneId, new Error(globalName + ' failed to load'));
+      })();
+    }
+
+    whenReady('THREE', () => {
+      const container = document.getElementById('viz-zone');
+      const width = container.clientWidth || 800;
+      const height = container.clientHeight || 380;
+
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 100);
+      camera.position.set(0, 4.8, 7.6);
+      camera.lookAt(0, 0.4, 0);
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setSize(width, height);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setClearColor(0x000000, 0);
+      container.appendChild(renderer.domElement);
+
+      window.addEventListener('resize', () => {
+        const w = container.clientWidth || 800;
+        const h = container.clientHeight || 380;
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h);
+      });
+
+      const controls = typeof THREE.OrbitControls === 'function'
+        ? new THREE.OrbitControls(camera, renderer.domElement)
+        : null;
+      if (controls) {
+        controls.enableDamping = true;
+        controls.target.set(0, 0.4, 0);
+      }
+
+      scene.add(new THREE.AmbientLight(0xffffff, 0.72));
+      const dirLight = new THREE.DirectionalLight(0xffffff, 0.85);
+      dirLight.position.set(5, 8, 6);
+      scene.add(dirLight);
+
+      const cPrimary = getCssVar('--chart-1', '#2575fc');
+      const cEmerald = getCssVar('--chart-3', '#228a49');
+      const cAmber = getCssVar('--chart-8', '#997112');
+      const cOutline = getCssVar('--outline', '#727676');
+
+      const grid = new THREE.GridHelper(9, 18, new THREE.Color(cOutline), new THREE.Color(cOutline));
+      grid.material.opacity = 0.18;
+      grid.material.transparent = true;
+      grid.position.y = -0.8;
+      scene.add(grid);
+
+      const busColors = [0xd93025, 0xf9ab00, 0x1a73e8];
+      for (let i = 0; i < 3; i++) {
+        const bar = new THREE.Mesh(
+          new THREE.BoxGeometry(7.2, 0.06, 0.08),
+          new THREE.MeshStandardMaterial({ color: busColors[i], roughness: 0.35, metalness: 0.4 })
+        );
+        bar.position.set(0, 2.1 - i * 0.14, -1.2);
+        scene.add(bar);
+      }
+
+      function createContactor(xPos, colorHex) {
+        const group = new THREE.Group();
+        group.position.set(xPos, 0.85, -0.6);
+
+        const bodyMat = new THREE.MeshStandardMaterial({ color: 0x383b42, roughness: 0.5, metalness: 0.2 });
+        const body = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.9, 0.85), bodyMat);
+        group.add(body);
+
+        const plungerMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(colorHex), roughness: 0.3, metalness: 0.25 });
+        const plunger = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.28, 0.45), plungerMat);
+        plunger.position.set(0, 0.32, 0.35);
+        group.add(plunger);
+
+        for (let i = -1; i <= 1; i++) {
+          const cBar = new THREE.Mesh(
+            new THREE.BoxGeometry(0.14, 0.12, 0.92),
+            new THREE.MeshStandardMaterial({ color: 0xb87333, roughness: 0.3, metalness: 0.6 })
+          );
+          cBar.position.set(i * 0.3, 0.48, 0);
+          group.add(cBar);
+        }
+
+        scene.add(group);
+        return { group, plunger };
+      }
+
+      const km1 = createContactor(-2.4, cPrimary);
+      const km3 = createContactor(-0.7, cAmber);
+      const km2 = createContactor(0.9, cEmerald);
+
+      const starShortBar = new THREE.Mesh(
+        new THREE.BoxGeometry(0.76, 0.08, 0.12),
+        new THREE.MeshStandardMaterial({ color: new THREE.Color(cAmber), roughness: 0.25, metalness: 0.5 })
+      );
+      starShortBar.position.set(-0.7, 1.48, -0.6);
+      scene.add(starShortBar);
+
+      const motorGroup = new THREE.Group();
+      motorGroup.position.set(2.65, 0.05, 0.3);
+      scene.add(motorGroup);
+
+      const stator = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.82, 0.82, 1.55, 28),
+        new THREE.MeshStandardMaterial({ color: 0x2b3648, roughness: 0.45, metalness: 0.35 })
+      );
+      stator.rotation.z = Math.PI / 2;
+      motorGroup.add(stator);
+
+      for (let i = 0; i < 8; i++) {
+        const angle = (i / 8) * Math.PI * 2;
+        const fin = new THREE.Mesh(
+          new THREE.BoxGeometry(1.4, 0.06, 0.14),
+          new THREE.MeshStandardMaterial({ color: 0x3b485e, roughness: 0.5 })
+        );
+        fin.position.set(0, Math.cos(angle) * 0.84, Math.sin(angle) * 0.84);
+        fin.rotation.x = angle;
+        motorGroup.add(fin);
+      }
+
+      const rotorPivot = new THREE.Group();
+      rotorPivot.position.set(-0.95, 0, 0);
+      motorGroup.add(rotorPivot);
+
+      const shaft = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.14, 0.14, 0.7, 20),
+        new THREE.MeshStandardMaterial({ color: 0xd0d5dd, roughness: 0.25, metalness: 0.7 })
+      );
+      shaft.rotation.z = Math.PI / 2;
+      rotorPivot.add(shaft);
+
+      const bladeMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(cPrimary), roughness: 0.3 });
+      for (let i = 0; i < 3; i++) {
+        const blade = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.95, 0.16), bladeMat);
+        blade.rotation.x = (i * Math.PI) / 3;
+        blade.position.x = -0.15;
+        rotorPivot.add(blade);
+      }
+
+      const termBox = new THREE.Mesh(
+        new THREE.BoxGeometry(0.85, 0.18, 0.65),
+        new THREE.MeshStandardMaterial({ color: 0x1e2229, roughness: 0.6 })
+      );
+      termBox.position.set(0, 0.92, 0);
+      motorGroup.add(termBox);
+
+      for (let r = 0; r < 2; r++) {
+        for (let c = -1; c <= 1; c++) {
+          const stud = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.055, 0.055, 0.18, 14),
+            new THREE.MeshStandardMaterial({ color: 0xd4af37, roughness: 0.25, metalness: 0.7 })
+          );
+          stud.position.set(c * 0.24, 1.04, (r === 0 ? -0.15 : 0.15));
+          motorGroup.add(stud);
+        }
+      }
+
+      const starBridgeLink = new THREE.Mesh(
+        new THREE.BoxGeometry(0.56, 0.05, 0.08),
+        new THREE.MeshStandardMaterial({ color: new THREE.Color(cAmber), emissive: new THREE.Color(cAmber), emissiveIntensity: 0.35 })
+      );
+      starBridgeLink.position.set(0, 1.13, 0.15);
+      starBridgeLink.visible = false;
+      motorGroup.add(starBridgeLink);
+
+      const deltaLinksGroup = new THREE.Group();
+      for (let c = -1; c <= 1; c++) {
+        const dLink = new THREE.Mesh(
+          new THREE.BoxGeometry(0.08, 0.05, 0.38),
+          new THREE.MeshStandardMaterial({ color: new THREE.Color(cEmerald), emissive: new THREE.Color(cEmerald), emissiveIntensity: 0.35 })
+        );
+        dLink.position.set(c * 0.24, 1.13, 0);
+        deltaLinksGroup.add(dLink);
+      }
+      deltaLinksGroup.visible = false;
+      motorGroup.add(deltaLinksGroup);
+
+      function createFlowParticles(points, colorHex) {
+        const curve = new THREE.CatmullRomCurve3(points);
+        const tube = new THREE.Mesh(
+          new THREE.TubeGeometry(curve, 32, 0.035, 8, false),
+          new THREE.MeshStandardMaterial({ color: 0x525760, transparent: true, opacity: 0.38 })
+        );
+        scene.add(tube);
+
+        const spheres = [];
+        const sphereMat = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(colorHex),
+          emissive: new THREE.Color(colorHex),
+          emissiveIntensity: 0.55
+        });
+        for (let i = 0; i < 6; i++) {
+          const sp = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 12), sphereMat);
+          sp.visible = false;
+          scene.add(sp);
+          spheres.push({ mesh: sp, offset: i / 6 });
+        }
+        return { curve, spheres };
+      }
+
+      const flowMain = createFlowParticles([
+        new THREE.Vector3(-2.4, 2.0, -1.2),
+        new THREE.Vector3(-2.4, 0.85, -0.6),
+        new THREE.Vector3(-2.4, 0.1, 0.2),
+        new THREE.Vector3(1.8, 0.1, 0.2),
+        new THREE.Vector3(2.65, 1.05, 0.15)
+      ], cPrimary);
+
+      const flowStar = createFlowParticles([
+        new THREE.Vector3(2.65, 1.05, 0.45),
+        new THREE.Vector3(1.2, -0.35, 0.55),
+        new THREE.Vector3(-0.7, -0.35, 0.1),
+        new THREE.Vector3(-0.7, 0.85, -0.6),
+        new THREE.Vector3(-0.7, 1.48, -0.6)
+      ], cAmber);
+
+      const flowDelta = createFlowParticles([
+        new THREE.Vector3(0.9, 2.0, -1.2),
+        new THREE.Vector3(0.9, 0.85, -0.6),
+        new THREE.Vector3(0.9, -0.1, 0.45),
+        new THREE.Vector3(2.65, 1.05, 0.45)
+      ], cEmerald);
+
+      let currentTime = 0;
+      let currentStage = 0;
+      let rotorSpeed = 0;
+      let autoPlayTimer = null;
+
+      const slider = document.getElementById('in-time');
+      const valTime = document.getElementById('val-time');
+      const stageBtns = document.querySelectorAll('.segmented-btn');
+      const hudBadge = document.getElementById('hud-stage-badge');
+      const descEl = document.getElementById('stage-desc');
+
+      const kpiVolt = document.getElementById('kpi-volt');
+      const kpiCurr = document.getElementById('kpi-curr');
+      const kpiTorq = document.getElementById('kpi-torq');
+      const kpiRpm = document.getElementById('kpi-rpm');
+
+      const bKm1 = document.getElementById('badge-km1');
+      const bKm3 = document.getElementById('badge-km3');
+      const bKm2 = document.getElementById('badge-km2');
+      const bKt1 = document.getElementById('badge-kt1');
+
+      function applyTimeState(t) {
+        currentTime = Math.max(0, Math.min(10, t));
+        slider.value = currentTime.toFixed(1);
+        valTime.textContent = `${currentTime.toFixed(1)} s`;
+
+        if (currentTime === 0) currentStage = 0;
+        else if (currentTime < 5.0) currentStage = 1;
+        else if (currentTime <= 5.3) currentStage = 2;
+        else currentStage = 3;
+
+        stageBtns.forEach(btn => {
+          btn.classList.toggle('is-active', parseInt(btn.dataset.stage, 10) === currentStage);
+        });
+
+        const km1Closed = currentStage >= 1;
+        const km3Closed = currentStage === 1;
+        const km2Closed = currentStage === 3;
+
+        km1.plunger.position.z = km1Closed ? 0.14 : 0.35;
+        km3.plunger.position.z = km3Closed ? 0.14 : 0.35;
+        km2.plunger.position.z = km2Closed ? 0.14 : 0.35;
+
+        starBridgeLink.visible = km3Closed;
+        deltaLinksGroup.visible = km2Closed;
+
+        bKm1.textContent = `KM1 (Main): ${km1Closed ? 'CLOSED' : 'OPEN'}`;
+        bKm3.textContent = `KM3 (Star Y): ${km3Closed ? 'CLOSED' : 'OPEN'}`;
+        bKm2.textContent = `KM2 (Delta Δ): ${km2Closed ? 'CLOSED' : 'OPEN'}`;
+        bKt1.textContent = currentStage === 1
+          ? `KT1 (Timer): ${currentTime.toFixed(1)} / 5.0 s`
+          : (currentStage >= 2 ? 'KT1: DONE (5.0 s)' : 'KT1: 0.0 s');
+
+        if (currentStage === 0) {
+          rotorSpeed = 0;
+          kpiVolt.textContent = '0 V (0%)';
+          kpiCurr.textContent = '0.0 × I_FL';
+          kpiTorq.textContent = '0% T_DOL';
+          kpiRpm.textContent = '0 RPM';
+          hudBadge.textContent = '階段 0：待機隔離 (Standby)';
+          descEl.textContent = '待機狀態：PLC／控制迴路未觸發啟動，接觸器 KM1、KM2、KM3 全部斷開，定子繞組無電流。';
+        } else if (currentStage === 1) {
+          const progress = currentTime / 5.0;
+          const rpm = Math.round(1180 * (1 - Math.exp(-3.2 * progress)));
+          rotorSpeed = 0.04 + 0.12 * (rpm / 1460);
+          const iRatio = (2.2 - 0.85 * progress).toFixed(1);
+          kpiVolt.textContent = '230 V (57.7%)';
+          kpiCurr.textContent = `${iRatio} × I_FL (1/3 DOL)`;
+          kpiTorq.textContent = '33.3% T_DOL (1/3)';
+          kpiRpm.textContent = `${rpm} RPM`;
+          hudBadge.textContent = '階段 1：星型降壓啟動 (Y-Start)';
+          descEl.textContent = '星型啟動 (KM1 + KM3 吸合)：KM3 將繞組尾端 W2-U2-V2 短接成中性點 (Star Point)，每相繞組僅承受相電壓 400V / √3 = 230V，啟動線電流與轉矩同時降至全壓直接啟動 (DOL) 的 1/3。';
+        } else if (currentStage === 2) {
+          rotorSpeed = 0.12;
+          kpiVolt.textContent = '殘餘反電動勢';
+          kpiCurr.textContent = '0.0 × I_FL (開路)';
+          kpiTorq.textContent = '0% (慣性滑行)';
+          kpiRpm.textContent = '1145 RPM';
+          hudBadge.textContent = '階段 2：開路轉換死區 (50ms Dead Time)';
+          descEl.textContent = '開路轉換過渡 (Open-Transition)：時間繼電器 KT1 達 5.0s，PLC 先切斷 KM3 並等待約 30–60ms 滅弧死區，確保 KM3 電弧完全熄滅且機械互鎖釋放後，才允許合上 KM2，嚴防三相母線直接短路。';
+        } else {
+          const deltaProg = Math.min(1, (currentTime - 5.3) / 2.5);
+          const rpm = Math.round(1145 + (1460 - 1145) * (1 - Math.exp(-3.5 * deltaProg)));
+          rotorSpeed = 0.24;
+          const iRatio = (1.85 - 0.85 * deltaProg).toFixed(2);
+          kpiVolt.textContent = '400 V (100%)';
+          kpiCurr.textContent = `${iRatio} × I_FL (額定運作)`;
+          kpiTorq.textContent = '100% T_DOL (全轉矩)';
+          kpiRpm.textContent = `${rpm} RPM`;
+          hudBadge.textContent = '階段 3：三角型全壓運作 (Δ-Run)';
+          descEl.textContent = '三角型全壓運作 (KM1 + KM2 吸合)：KM2 將 U1-W2、V1-U2、W1-V2 首尾相連成閉合三角形 (Δ)，每相繞組承受全線電壓 400V，輸出 100% 額定轉矩與功率帶動負載穩定運行。';
+        }
+
+        flowMain.spheres.forEach(s => { s.mesh.visible = km1Closed && (km3Closed || km2Closed); });
+        flowStar.spheres.forEach(s => { s.mesh.visible = km3Closed; });
+        flowDelta.spheres.forEach(s => { s.mesh.visible = km2Closed; });
+      }
+
+      slider.addEventListener('input', () => {
+        if (autoPlayTimer) {
+          clearInterval(autoPlayTimer);
+          autoPlayTimer = null;
+          document.getElementById('btn-auto').textContent = '自動順序演示';
+        }
+        applyTimeState(parseFloat(slider.value));
+      });
+
+      stageBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (autoPlayTimer) {
+            clearInterval(autoPlayTimer);
+            autoPlayTimer = null;
+            document.getElementById('btn-auto').textContent = '自動順序演示';
+          }
+          const st = parseInt(btn.dataset.stage, 10);
+          const targetTimes = [0, 2.2, 5.1, 8.0];
+          applyTimeState(targetTimes[st] || 0);
+        });
+      });
+
+      document.getElementById('btn-auto').addEventListener('click', (e) => {
+        const btn = e.currentTarget;
+        if (autoPlayTimer) {
+          clearInterval(autoPlayTimer);
+          autoPlayTimer = null;
+          btn.textContent = '自動順序演示';
+          return;
+        }
+        if (currentTime >= 9.9) currentTime = 0;
+        btn.textContent = '暫停演示';
+        autoPlayTimer = setInterval(() => {
+          let nextT = currentTime + 0.08;
+          if (nextT >= 10) {
+            nextT = 10;
+            clearInterval(autoPlayTimer);
+            autoPlayTimer = null;
+            btn.textContent = '自動順序演示';
+          }
+          applyTimeState(nextT);
+        }, 50);
+      });
+
+      document.getElementById('btn-reset').addEventListener('click', () => {
+        camera.position.set(0, 4.8, 7.6);
+        camera.lookAt(0, 0.4, 0);
+        if (controls) {
+          controls.target.set(0, 0.4, 0);
+          controls.update();
+        }
+      });
+
+      applyTimeState(2.0);
+
+      let animClock = 0;
+      function animate() {
+        requestAnimationFrame(animate);
+        animClock += 0.012;
+        rotorPivot.rotation.x += rotorSpeed;
+
+        [flowMain, flowStar, flowDelta].forEach(flow => {
+          flow.spheres.forEach(sp => {
+            if (sp.mesh.visible) {
+              const u = (sp.offset + animClock) % 1;
+              const pt = flow.curve.getPointAt(u);
+              sp.mesh.position.copy(pt);
+            }
+          });
+        });
+
+        if (controls) controls.update();
+        renderer.render(scene, camera);
+      }
+      animate();
+    });
+  </script>
+</body>
+</html>
